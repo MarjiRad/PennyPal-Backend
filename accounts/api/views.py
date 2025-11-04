@@ -1,64 +1,39 @@
-
-
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
-from rest_framework.views import APIView     
+from rest_framework.views import APIView
 from rest_framework.renderers import JSONRenderer
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.authentication import TokenAuthentication 
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from .serializers import RegisterSerializer, LoginSerializer, ProfileSerializer
+from .serializers import (
+    RegisterSerializer,
+    LoginSerializer,
+    ProfileSerializer,
+    CategorySerializer,
+    CalendarSerializer,
+    CalendarCellSerializer,
+    BillDueSerializer,
+)
 from accounts.models import Profile, Category, Transaction, Calendar, CalendarCell, BillDue
-from accounts.api.serializers import CategorySerializer, CalendarSerializer, CalendarCellSerializer, BillDueSerializer
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
 from django.db.models.functions import TruncMonth, Coalesce
 from django.db.models import Sum, F, Value as V, DecimalField
 from django.db import models
 
 
-# -------------------- USER & AUTH ---------------------------------------------------------------------------------
+# -------------------- PROFILE & USER VIEWS -----------------------------------------------------------------------
 class ProfileListView(generics.ListAPIView):
+    """List all user profiles (admin or debugging only)."""
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
 
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = RegisterSerializer    
-
-class LoginView(generics.GenericAPIView):
-    serializer_class = LoginSerializer
-    renderer_classes = [JSONRenderer]
-
-    def get(self, request, *args, **kwargs):
-        return Response({"detail": "Use POST to log in with username and password."})
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        username = serializer.validated_data['username']
-        password = serializer.validated_data['password']
-        user = authenticate(username=username, password=password)
-
-        if user:
-            token, created = Token.objects.get_or_create(user=user) 
-            return Response({
-                "message": "Login successful!",
-                "token": token.key,
-                "user": {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email
-                }
-            }, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "Invalid username or password"}, status=status.HTTP_400_BAD_REQUEST)
 
 class UserProfileView(generics.RetrieveAPIView):
+    """Returns the profile of the current authenticated user."""
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -66,42 +41,46 @@ class UserProfileView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user.profile
-    
+
+
 class ProfileUpdateView(generics.RetrieveUpdateAPIView):
+    """Allows the user to update their profile info."""
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        return self.request.user.profile 
+        return self.request.user.profile
 
-# -------------------- CATEGORY ------------------------------------------------------------------------------------
+# -------------------- CATEGORY --------------------------------------------------------------------
 class CategoryListCreateView(generics.ListCreateAPIView):
-    queryset = Category.objects.all()
+    """Create and list user-specific categories."""
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication]
+
+    def get_queryset(self):
+        return Category.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user) 
+        serializer.save(user=self.request.user)
 
-# -------------------- TRANSACTIONS --------------------------------------------------------------------------------
+# -------------------- TRANSACTIONS ----------------------------------------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([TokenAuthentication])
-
 def total_expenses(request):
+    """Return total expense amount for the logged-in user."""
     total = Transaction.objects.filter(user=request.user, type='expense').aggregate(Sum('amount'))
     return Response({"total_expenses": total['amount__sum'] or 0})
 
-# -------------------- MONTHLY SUMMARY -----------------------------------------------------------------------------
+# -------------------- MONTHLY SUMMARY --------------------------------------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([TokenAuthentication])
 def monthly_summary(request):
+    """Return monthly income, expenses, and balance summary."""
     user = request.user
-
-    if not user.is_authenticated:
-        return Response({"error": "Authentication required"}, status=401)
 
     transactions = (
         Transaction.objects
@@ -120,32 +99,28 @@ def monthly_summary(request):
                 output_field=DecimalField()
             )
         )
-        .annotate(
-            net_balance=F('total_income') - F('total_expenses')
-        )
+        .annotate(net_balance=F('total_income') - F('total_expenses'))
         .order_by('-month')
     )
 
     return Response(transactions)
 
-# ------------------- Day views-------------------------------------------------------------------------------------
+# -------------------- DAY VIEW --------------------------------------------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([TokenAuthentication])
 def day_view(request, calendar_id, date_str):
+    """View details (transactions + bills) for a specific date."""
     try:
         calendar = Calendar.objects.get(id=calendar_id, user=request.user)
     except Calendar.DoesNotExist:
         return Response({"error": "Calendar not found"}, status=404)
 
-    # Convert date string to Python date
-    from datetime import datetime
     try:
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     except ValueError:
         return Response({"error": "Invalid date format (use YYYY-MM-DD)"}, status=400)
 
-    # Get all transactions and bills for this date
     transactions = Transaction.objects.filter(user=request.user, date=target_date)
     bills = BillDue.objects.filter(user=request.user, due_date=target_date)
 
@@ -162,17 +137,14 @@ def day_view(request, calendar_id, date_str):
         "net_balance": net_balance,
     })
 
-# --------------------Annual summary -------------------------------------------------------------------------------
+# -------------------- ANNUAL SUMMARY ---------------------------------------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([TokenAuthentication])
 def annual_summary(request):
+    """Return total income, expenses, and net balance for the whole year."""
     user = request.user
-    year = request.query_params.get('year')
-
-    from datetime import datetime
-    if not year:
-        year = datetime.now().year  # default to current year
+    year = request.query_params.get('year', datetime.now().year)
 
     transactions = (
         Transaction.objects
@@ -190,9 +162,7 @@ def annual_summary(request):
                 output_field=DecimalField()
             )
         )
-        .annotate(
-            net_balance=F('total_income') - F('total_expenses')
-        )
+        .annotate(net_balance=F('total_income') - F('total_expenses'))
         .order_by('-total_expenses')
     )
 
@@ -208,8 +178,10 @@ def annual_summary(request):
         "net_balance": net_balance_all
     })
 
-# -------------------- CALENDAR ------------------------------------------------------------------------------------
+
+# -------------------- CALENDAR ---------------------------------------------------------------------
 class CalendarListCreateView(generics.ListCreateAPIView):
+    """List all user calendars or create a new one."""
     serializer_class = CalendarSerializer
     permission_classes = [permissions.IsAuthenticated]
     authentication_classes = [TokenAuthentication]
@@ -221,11 +193,12 @@ class CalendarListCreateView(generics.ListCreateAPIView):
         calendar = serializer.save(user=self.request.user)
         _, num_days = monthrange(calendar.year, calendar.month)
         for day in range(1, num_days + 1):
-            cell_date = date(calendar.year, calendar.month, day)
-            CalendarCell.objects.create(calendar=calendar, date=cell_date)
+            CalendarCell.objects.create(calendar=calendar, date=date(calendar.year, calendar.month, day))
 
-# -------------------- BILLS ---------------------------------------------------------------------------------------
+
+# -------------------- BILLS ------------------------------------------------------------------------
 class BillDueListCreateView(generics.ListCreateAPIView):
+    """List or create bills due for the current user."""
     serializer_class = BillDueSerializer
     permission_classes = [permissions.IsAuthenticated]
     authentication_classes = [TokenAuthentication]
