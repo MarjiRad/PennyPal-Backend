@@ -151,11 +151,11 @@ REST_FRAMEWORK = {
     ],
 }
 
-
+CORS_ALLOW_ALL_ORIGINS = False
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  
-    "https://pennypal-frontend.herokuapp.com", 
+    "http://localhost:5173",
+    "https://pennypal-frontend.herokuapp.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
