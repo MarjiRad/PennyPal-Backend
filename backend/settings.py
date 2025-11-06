@@ -33,7 +33,7 @@ SECRET_KEY = 'django-insecure-omnw2boz)%pul$c_%iuk0juf4er6l^%c5emabm*8obls$ys4ci
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['pennypal-backend-app-d2ad747d3bfd.herokuapp.com', 'localhost']
 
 
 # Application definition
