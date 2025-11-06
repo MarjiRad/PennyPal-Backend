@@ -24,7 +24,16 @@ class TransactionListCreateView(generics.ListCreateAPIView):
     authentication_classes = [TokenAuthentication]
 
     def get_queryset(self):
-        return Transaction.objects.filter(user=self.request.user).order_by('-date')
+        return Transaction.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+class TransactionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = TransactionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [TokenAuthentication]
+
+    def get_queryset(self):
+        return Transaction.objects.filter(user=self.request.user)

@@ -14,7 +14,7 @@ from accounts.api.views import (
     BillDueDetailView,
     DeleteAccountView,
 )
-from accounts.api.transaction_views import TransactionListCreateView
+from accounts.api.transaction_views import TransactionListCreateView, TransactionDetailView
 
 urlpatterns = [
     # -------- AUTH --------
@@ -29,6 +29,7 @@ urlpatterns = [
     # -------- CATEGORIES & TRANSACTIONS --------
     path("categories/", CategoryListCreateView.as_view(), name="category-list-create"),
     path("transactions/", TransactionListCreateView.as_view(), name="transaction-list-create"),
+    path("transactions/<int:pk>/", TransactionDetailView.as_view(), name="transaction-detail"),
     path("transactions/total-expenses/", total_expenses, name="total-expenses"),
 
     # -------- CALENDAR & DAILY VIEW --------

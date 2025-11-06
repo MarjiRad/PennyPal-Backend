@@ -12,26 +12,27 @@ from calendar import monthrange
 from datetime import date, datetime
 from rest_framework.decorators import api_view, permission_classes
 from accounts.models import Profile, Category, Transaction, Calendar, CalendarCell, BillDue
+from rest_framework.views import APIView
 from .serializers import (
-    ProfileSerializer,
+    UserSerializer,
     CategorySerializer,
     CalendarSerializer,
     BillDueSerializer,
     TransactionSerializer,
     UserSerializer,
 )
-from accounts.api.serializers import CategorySerializer  # make sure already imported
+from accounts.api.serializers import CategorySerializer  
 
 
 # -------------------- PROFILE & USER VIEWS --------------------
 
-class UserProfileView(generics.RetrieveAPIView):
-    serializer_class = UserSerializer
+class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [TokenAuthentication]
 
-    def get_object(self):
-        return self.request.user
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
 
 class ProfileUpdateView(generics.UpdateAPIView):
     serializer_class = UserSerializer
